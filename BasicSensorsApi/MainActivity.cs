@@ -17,6 +17,7 @@ using AndroidX.Core.Content;
 using CommonSampleLibrary;
 using Google.Android.Material.Snackbar;
 using Java.Util.Concurrent;
+using System;
 using System.Threading.Tasks;
 
 namespace BasicSensorsApi
@@ -209,7 +210,7 @@ namespace BasicSensorsApi
                                 var intent = new Intent();
 
                                 intent.SetAction( Android.Provider.Settings.ActionApplicationDetailsSettings );
-                                var uri = Uri.FromParts( "package", Application.Context.PackageName, null );
+                                var uri = Android.Net.Uri.FromParts( "package", Application.Context.PackageName, null );
                                 intent.SetData( uri );
                                 intent.SetFlags( ActivityFlags.NewTask );
 
@@ -253,7 +254,17 @@ namespace BasicSensorsApi
             switch ( requestCode )
             {
                 case FitActionRequestCode.FindDataSources:
+#if USESENSORSCLIENT
                     FindFitnessDataSources();
+#endif
+
+#if USESENSORSCLIENT_ASYNC
+                    FindFitnessDataSourcesAsync();
+#endif
+
+#if USESENSORSAPI
+                    FindFitnessDataSourcesWithSensorsApi();
+#endif
                     break;
             }
         }
@@ -288,24 +299,92 @@ namespace BasicSensorsApi
             Log.Info( TAG, "Ready" );
         }
 
+        /// <summary>
+        /// Finds Fit DataSources using the SensorsClient API.
+        /// </summary>
         private async Task FindFitnessDataSources()
         {
             DataSourcesRequest request = new DataSourcesRequest.Builder()
                 .SetDataTypes( DataType.TypeLocationSample )
-                .SetDataSourceTypes( DataSource.TypeRaw, DataSource.TypeDerived )
+                .SetDataSourceTypes( DataSource.TypeRaw )
                 .Build();
 
             var client = FitnessClass.GetSensorsClient( this, GoogleAccount );
 
-#if USESENSORSCLIENT
+            var dataSourcesSuccessListener = new DataSourcesSuccessListener
+            {
+                OnSuccessImpl = async ( dataSources ) =>
+                {
+                    foreach ( DataSource dataSource in dataSources )
+                    {
+                        Log.Info( TAG, "Data source found: " + dataSource );
+                        Log.Info( TAG, "Data Source type: " + dataSource.DataType.Name );
+
+                        // NOTE: We used DataType.Name here as the test for equality between DataType was false.
+                        // The reason for this should be determined.
+
+                        // Let's register a listener to receive Activity data!
+                        if ( (dataSource.DataType.Name == DataType.TypeLocationSample.Name) && (_dataPointListener == null) )
+                        {
+                            Log.Info( TAG, "Data source for LOCATION_SAMPLE found!  Registering." );
+                            await RegisterFitnessDataListener( dataSource, DataType.TypeLocationSample );
+                        }
+                    }
+                }
+            };
+
+            client.FindDataSources( request ).AddOnSuccessListener( dataSourcesSuccessListener );
+        }
+
+        /// <summary>
+        /// Finds Fit DataSources using SensorsClient API.
+        /// Fails with exception at FindDataSourcesAsync()
+        /// </summary>
+        private async Task FindFitnessDataSourcesAsync()
+        {
+            DataSourcesRequest request = new DataSourcesRequest.Builder()
+                .SetDataTypes( DataType.TypeLocationSample )
+                .SetDataSourceTypes( DataSource.TypeRaw )
+                .Build();
+
+            var client = FitnessClass.GetSensorsClient( this, GoogleAccount );
+
             var dataSources = await client.FindDataSourcesAsync( request );
-#else
+
+            foreach ( DataSource dataSource in dataSources )
+            {
+                Log.Info( TAG, "Data source found: " + dataSource );
+                Log.Info( TAG, "Data Source type: " + dataSource.DataType.Name );
+
+                // NOTE: We used DataType.Name here as the test for equality between DataType was false.
+                // The reason for this should be determined.
+
+                // Let's register a listener to receive Activity data!
+                if ( (dataSource.DataType.Name == DataType.TypeLocationSample.Name) && (_dataPointListener == null) )
+                {
+                    Log.Info( TAG, "Data source for LOCATION_SAMPLE found!  Registering." );
+                    await RegisterFitnessDataListener( dataSource, DataType.TypeLocationSample );
+                }
+            }
+        }
+
+        /// <summary>
+        /// Finds Fit DataSources using the deprecated Fitness.SensorsApi.
+        /// </summary>
+        private async Task FindFitnessDataSourcesWithSensorsApi()
+        {
+            DataSourcesRequest request = new DataSourcesRequest.Builder()
+                .SetDataTypes( DataType.TypeLocationSample )
+                .SetDataSourceTypes( DataSource.TypeRaw )
+                .Build();
+
+            var client = FitnessClass.GetSensorsClient( this, GoogleAccount );
+
             var dataSourcesResult = await FitnessClass.SensorsApi.FindDataSourcesAsync( client.AsGoogleApiClient(), request );
-            var dataSources = dataSourcesResult.DataSources;
 
             Log.Info( TAG, "Result: " + dataSourcesResult.Status );
-#endif
-            foreach ( DataSource dataSource in dataSources )
+
+            foreach ( DataSource dataSource in dataSourcesResult.DataSources )
             {
                 Log.Info( TAG, "Data source found: " + dataSource );
                 Log.Info( TAG, "Data Source type: " + dataSource.DataType.Name );
@@ -378,6 +457,26 @@ namespace BasicSensorsApi
                     Log.Info( TAG, "Detected DataPoint field: " + field.Name );
                     Log.Info( TAG, "Detected DataPoint value: " + val );
                 }
+            }
+        }
+
+        private class DataSourcesSuccessListener : Java.Lang.Object, Android.Gms.Tasks.IOnSuccessListener
+        {
+            public Action<JavaCollection<DataSource>> OnSuccessImpl { get; set; }
+
+            public void OnSuccess( Java.Lang.Object result )
+            {
+                OnSuccessImpl( result.JavaCast<JavaCollection<DataSource>>() );
+            }
+        }
+
+        private class DataSourcesFailureListener : Java.Lang.Object, Android.Gms.Tasks.IOnFailureListener
+        {
+            public void OnFailure( Java.Lang.Exception e )
+            {
+                Log.Error( TAG, $" [{DateTime.Now}] - [AndroidAppLinks Failure] - {e.Message}" );
+
+                throw e;
             }
         }
 
