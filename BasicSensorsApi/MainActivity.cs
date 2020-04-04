@@ -403,25 +403,28 @@ namespace BasicSensorsApi
 
         private async Task RegisterFitnessDataListener( DataSource dataSource, DataType dataType )
         {
+            var request = new SensorRequest.Builder()
+                .SetDataSource( dataSource ) // Optional but recommended for custom data sets.
+                .SetDataType( dataType ) // Can't be omitted.
+                .SetSamplingRate( 10, TimeUnit.Seconds )
+                .Build();
+
             _dataPointListener = new OnDataPointListener();
 
             var client = FitnessClass.GetSensorsClient( this, GoogleAccount );
 
-            var status = await FitnessClass.SensorsApi.AddAsync( client.AsGoogleApiClient(), new SensorRequest.Builder()
-                .SetDataSource( dataSource ) // Optional but recommended for custom data sets.
-                .SetDataType( dataType ) // Can't be omitted.
-                .SetSamplingRate( 10, TimeUnit.Seconds )
-                .Build(),
-                _dataPointListener );
+            await client.AddAsync( request, _dataPointListener );
 
-            if ( status.IsSuccess )
-            {
-                Log.Info( TAG, "Listener registered!" );
-            }
-            else
-            {
-                Log.Info( TAG, "Listener not registered." );
-            }
+            Log.Info( TAG, "Listener registered." );
+
+            //if ( status.IsSuccess )
+            //{
+            //    Log.Info( TAG, "Listener registered." );
+            //}
+            //else
+            //{
+            //    Log.Info( TAG, "Listener not registered." );
+            //}
         }
 
         private async Task UnregisterFitnessDataListener()
@@ -433,9 +436,9 @@ namespace BasicSensorsApi
 
             var client = FitnessClass.GetSensorsClient( this, GoogleAccount );
 
-            var status = await FitnessClass.SensorsApi.RemoveAsync( client.AsGoogleApiClient(), _dataPointListener );
+            var status = await client.RemoveAsync( _dataPointListener );
 
-            if ( status.IsSuccess )
+            if ( status.BooleanValue() )
             {
                 Log.Info( TAG, "Listener was removed!" );
 
