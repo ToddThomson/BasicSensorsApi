@@ -311,29 +311,28 @@ namespace BasicSensorsApi
 
             var client = FitnessClass.GetSensorsClient( this, GoogleAccount );
 
-            var dataSourcesSuccessListener = new DataSourcesSuccessListener
-            {
-                OnSuccessImpl = async ( dataSources ) =>
+            client.FindDataSources( request )
+                .AddOnSuccessListener( new DataSourcesSuccessListener
                 {
-                    foreach ( DataSource dataSource in dataSources )
+                    OnSuccessImpl = async ( dataSources ) =>
                     {
-                        Log.Info( TAG, "Data source found: " + dataSource );
-                        Log.Info( TAG, "Data Source type: " + dataSource.DataType.Name );
-
-                        // NOTE: We used DataType.Name here as the test for equality between DataType was false.
-                        // The reason for this should be determined.
-
-                        // Let's register a listener to receive Activity data!
-                        if ( (dataSource.DataType.Name == DataType.TypeLocationSample.Name) && (_dataPointListener == null) )
+                        foreach ( DataSource dataSource in dataSources )
                         {
-                            Log.Info( TAG, "Data source for LOCATION_SAMPLE found!  Registering." );
-                            await RegisterFitnessDataListener( dataSource, DataType.TypeLocationSample );
+                            Log.Info( TAG, "Data source found: " + dataSource );
+                            Log.Info( TAG, "Data Source type: " + dataSource.DataType.Name );
+
+                            // NOTE: We used DataType.Name here as the test for equality between DataType was false.
+                            // The reason for this should be determined.
+
+                            // Let's register a listener to receive Activity data!
+                            if ( (dataSource.DataType.Name == DataType.TypeLocationSample.Name) && (_dataPointListener == null) )
+                            {
+                                Log.Info( TAG, "Data source for LOCATION_SAMPLE found!  Registering." );
+                                await RegisterFitnessDataListener( dataSource, DataType.TypeLocationSample );
+                            }
                         }
                     }
-                }
-            };
-
-            client.FindDataSources( request ).AddOnSuccessListener( dataSourcesSuccessListener );
+                } );
         }
 
         /// <summary>
@@ -413,18 +412,25 @@ namespace BasicSensorsApi
 
             var client = FitnessClass.GetSensorsClient( this, GoogleAccount );
 
-            await client.AddAsync( request, _dataPointListener );
+            // NOTE: There is no way to check on the result of the AddAsync() method.
+            // We use the sensors client Add() with an OnComplete callback to obtain
+            // the complete status.
+            client.Add( request, _dataPointListener )
+                .AddOnCompleteListener( this, new OnCompleteListener
+                {
+                    OnCompleteCallback = ( success ) =>
+                    {
+                        if ( success )
+                        {
+                            Log.Info( TAG, "Listener registered." );
+                        }
+                        else
+                        {
+                            Log.Info( TAG, "Listener not registered." );
+                        }
 
-            Log.Info( TAG, "Listener registered." );
-
-            //if ( status.IsSuccess )
-            //{
-            //    Log.Info( TAG, "Listener registered." );
-            //}
-            //else
-            //{
-            //    Log.Info( TAG, "Listener not registered." );
-            //}
+                    }
+                } );
         }
 
         private async Task UnregisterFitnessDataListener()
@@ -447,6 +453,16 @@ namespace BasicSensorsApi
             else
             {
                 Log.Info( TAG, "Listener was not removed." );
+            }
+        }
+
+        private class OnCompleteListener : Java.Lang.Object, Android.Gms.Tasks.IOnCompleteListener
+        {
+            public Action<bool> OnCompleteCallback { get; set; } = ( status ) => { };
+
+            public void OnComplete( Android.Gms.Tasks.Task task )
+            {
+                OnCompleteCallback( task.IsSuccessful );
             }
         }
 
